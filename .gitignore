@@ -1,0 +1,16 @@
+# Security
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Models (Too big for git)
+*.gguf
+models/
+
+# IDE settings
+.vscode/
+.idea/
