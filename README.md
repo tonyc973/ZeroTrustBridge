@@ -1,6 +1,6 @@
 # 🛡️ Zero-Trust AI Bridge
 
-> **Generative AI Security Layer**
+> **Generative AI Security Layer CLI**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
 ![OpenAI](https://img.shields.io/badge/OpenAI-API-green?style=for-the-badge&logo=openai)
