@@ -1,72 +1,97 @@
+import sys
+import logging
+from datetime import datetime
 from llm_factory import LLMFactory
 from llm_vault import LLMVault
 
-# --- CONFIGURATION ---
-# 1. LOCAL: Used for Security Scanning (Mistral running on llama-server)
-LOCAL_CLIENT = LLMFactory.create_client("local")
+# --- SETUP LOGGING ---
+logging.basicConfig(
+    filename='audit.log', 
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
 
-# 2. CLOUD: Used for Complex Reasoning (GPT-4o)
-# Change this to "local" if you want to run everything offline!
-CLOUD_CLIENT = LLMFactory.create_client("openai")
+def log_event(event_type, content):
+    """Writes to audit.log without printing to screen"""
+    logging.info(f"[{event_type}] {content}")
 
 def main():
-    # Initialize the Vault with the local client
-    # Note: 'mistral' is just a label here, llama-server uses whatever model you loaded
-    vault = LLMVault(LOCAL_CLIENT, model_name="mistral")
+    # 1. INIT
+    print("🔌 Connecting to Local Guard (Mistral)...")
+    try:
+        local_client = LLMFactory.create_client("local")
+        # Quick health check
+        local_client.models.list()
+    except Exception:
+        print("❌ Error: Could not connect to llama-server at http://localhost:8080/v1")
+        print("   Did you run: ./llama-server -m model.gguf --port 8080?")
+        sys.exit(1)
 
-    print("\n🛡️  Zero-Trust Bridge v2 (No-Magic Edition) Initialized")
-    print("-------------------------------------------------------")
+    print("🔌 Connecting to Cloud Brain (OpenAI)...")
+    cloud_client = LLMFactory.create_client("openai")
 
-    # SIMULATED INPUT
-    user_input = """
-    I'm debugging a legacy app.
-    The database is at 10.50.22.19 (Project: 'Titan-DB').
-    The admin user is 'admin_corp' and the hash is 'x88-99-aa-bb'.
-    Write a Python script to connect to this.
-    """
+    vault = LLMVault(local_client)
 
-    print(f"\n📝 RAW INPUT:\n{user_input.strip()}")
+    print("\n" + "="*50)
+    print("🛡️  ZERO-TRUST BRIDGE v2.1 (INTERACTIVE)")
+    print("   Type 'exit' or 'quit' to stop.")
+    print("="*50 + "\n")
 
-    # 1. ENCRYPT (Local)
-    safe_prompt = vault.encrypt(user_input)
-    
-    if safe_prompt != user_input:
-        print(f"\n🔒 MASKED PROMPT (Sending to Cloud):\n{safe_prompt.strip()}")
-    else:
-        print("\n⚠️ No secrets detected.")
-
-    # 2. REASON (Cloud)
-    print("\n☁️  Sending to GPT-4o...")
-    
     system_instructions = """
     You are a Senior Developer.
-    You will receive code with placeholders like <SECRET_x>.
+    You will receive code with placeholders like <SECRET_x> or <IP_y>.
     Write working code using those EXACT placeholders.
-    Do not ask for the real values.
+    Do NOT ask for real values.
     """
 
-    try:
-        response = CLOUD_CLIENT.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_instructions},
-                {"role": "user", "content": safe_prompt}
-            ],
-            temperature=0.7
-        )
-        cloud_output = response.choices[0].message.content
-    except Exception as e:
-        print(f"❌ Cloud Error: {e}")
-        return
+    # 2. CHAT LOOP
+    while True:
+        try:
+            user_input = input("👤 YOU: ")
+            if user_input.lower() in ['exit', 'quit']:
+                break
+            if not user_input.strip():
+                continue
 
-    # 3. DECRYPT (Local)
-    print("\n🔓 DECRYPTING RESPONSE...")
-    final_output = vault.decrypt(cloud_output)
+            # Log Raw Input (In a real app, you might NOT log this to be safe, 
+            # but for this demo, we log it to prove it works)
+            log_event("RAW_INPUT", user_input)
 
-    print("\n✅ FINAL RESTORED CODE:")
-    print("="*40)
-    print(final_output)
-    print("="*40)
+            # A. ENCRYPT
+            print("   🔒 Scanning...", end="\r")
+            safe_prompt = vault.encrypt(user_input)
+            
+            if safe_prompt != user_input:
+                print(f"   🔒 Secured: {safe_prompt}")
+                log_event("MASKED_PROMPT", safe_prompt)
+            else:
+                log_event("MASKED_PROMPT", "No secrets detected")
+
+            # B. CLOUD
+            print("   ☁️  Thinking...", end="\r")
+            response = cloud_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_instructions},
+                    {"role": "user", "content": safe_prompt}
+                ],
+                temperature=0.7
+            )
+            cloud_output = response.choices[0].message.content
+            log_event("CLOUD_RESPONSE", cloud_output)
+
+            # C. DECRYPT
+            final_output = vault.decrypt(cloud_output)
+            log_event("DECRYPTED_OUTPUT", final_output)
+
+            print(f"🤖 AI: {final_output}\n")
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"\n❌ Error: {e}")
+
+    print("\n👋 Session Closed. Audit log saved to 'audit.log'.")
 
 if __name__ == "__main__":
     main()
